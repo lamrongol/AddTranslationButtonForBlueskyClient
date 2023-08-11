@@ -1,156 +1,83 @@
 // ==UserScript==
-// @name         Blueskyの英語を翻訳するボタン(Ucho-ten, Laika)
-// @namespace    https://bsky.app/profile/lamrongol.bsky.social
-// @version      0.3.1
-// @description  Blueskyの本文の下に翻訳ボタンを追加し、クリックすると翻訳文を表示します
-// @author       lamrongol
-// @match        https://ucho-ten.net*
-// @match        https://laika-bluesky.web.app/*
-// @icon         https://bsky.app/static/apple-touch-icon.png
-// @require      https://ajax.googleapis.com/ajax/libs/jquery/3.6.4/jquery.min.js
-// @grant        none
+// @name         Blueskyの英語を自動的に翻訳
+// @namespace    @lamrongol
+// @version      0.1.4
+// @description  Blueskyの日本語文字が含まれてないポストを自動で翻訳。ただし英語以外は翻訳できない。
+// @author       Laml🍞
+// @match        https://bsky.app/*
+// @icon         https://www.google.com/s2/favicons?sz=64&domain=bsky.app
+// @require      https://ajax.googleapis.com/ajax/libs/jquery/3.7.0/jquery.min.js
 // @license MIT
+// @grant        none
 // ==/UserScript==
- 
+
 (function() {
     'use strict';
- 
-    const APP = {
-        BSKY: 'value1',
-        UCHO_TEN: 'value2',
-        LAIKA: 'value3'
-    };
- 
+
     // setting
-    const translateButtonLabel = "Translate...";
     const sourceLang = "en";
     const targetLang = "ja";
- 
-    // css
-    const style = `<style>
-        .translateBlock .translateBtn {
-            color: rgb(0, 133, 255);
-            text-decoration: none;
-            cursor: pointer;
-        }
-        .translateBlock .translateText {
-            display: none;
-        }
-        .translateBlock .translateText p {
-            margin: 0.5rem 0;
-        }
-    </style>`;
-    $("head").append(style);
- 
-    // ----------
-    const host = window.location.host;
-    let app;
-    if(host.endsWith("bsky.app")) app = APP.BSKY;
-    else if(host.endsWith("ucho-ten.net")) app = APP.UCHO_TEN;
-    else if(host.endsWith("laika-bluesky.web.app")) app = APP.LAIKA;
-    else return;
- 
-    let observeTarget;
-    switch(app){
-      case APP.BSKY:
-        observeTarget = "#root";
-        break;
-      case APP.UCHO_TEN:
-        observeTarget = ".nextui-c-lhoAZR > div";
-        break;
-      case APP.LAIKA:
-        observeTarget = "body > app-root > main > app-home > main > section > app-timeline";
-        break;
-    }
+
+    const jaRe = /[\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Han}]/u
+
+    const postTextCSS = ".css-175oi2r > .css-175oi2r.r-1awozwy.r-18u37iz.r-1w6e6rj > .css-1rynq56";
+    //const quotePostTextCSS;
+    const marker = "translated";
+    const base_url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=`
+
+    const observeTarget = "#root";
     const observeOption = {
         childList: true,
         subtree: true,
     }
- 
-    let postTextCSS;
-    switch(app){
-      case APP.BSKY:
-        postTextCSS = ".css-175oi2r > .css-175oi2r.r-1awozwy.r-18u37iz.r-1w6e6rj > .css-1rynq56";
-        break;
-      case APP.UCHO_TEN:
-        postTextCSS = 'div[style="word-break: break-all;"]';
-        break;
-      case APP.LAIKA:
-        postTextCSS = ".feed_content, .feed_quote_content, .reply_bottom";
-        break;
+
+    async function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
     }
-    const marker = "ngurtb";
- 
-    let translateBtnObserver = new MutationObserver(function (MutationRecords, MutationObserver) {
-        translateBtnObserver.disconnect();
-        $(postTextCSS).not(`.${marker}`).each(function(i, elem) {
-            $(elem).addClass(marker);
-            let parent = app==APP.BSKY ? $(elem).parent() : $(elem);
-            parent.after(`<div class="translateBlock"><div class="translateBtn">${translateButtonLabel}</div><div class="translateText"></div></div>`);
-            let translateBtn = parent.parent().find(".translateBtn");
-            let translateText = parent.parent().find(".translateText");
-            setTranslateBlock(translateBtn, translateText, $(elem));
-        });
-        translateBtnObserver.observe($(observeTarget).get(0), observeOption);
-    });
-    function addObserverIfDesiredNodeAvailable() {
-        const composeBox = $(observeTarget).get(0);
-        if(!composeBox) {
-            //The node we need does not exist yet.
-            //Wait 500ms and try again
-            window.setTimeout(addObserverIfDesiredNodeAvailable, 500);
-            return;
-        }
-        translateBtnObserver.observe(composeBox, observeOption);
-        //window.setTimeout(checkRootExists, 500);
-    }
-    /*
-    function checkRootExists() {
-        const composeBox = $(observeTarget);
-        if(!composeBox) {
-            //The node we need does not exist yet.
-            //Wait 500ms and try again
-            window.setTimeout(addObserverIfDesiredNodeAvailable, 500);
-            return;
-        }
-        window.setTimeout(checkRootExists, 500);
-    }
-    */
-    addObserverIfDesiredNodeAvailable();
- 
-    function setTranslateBlock(translateBtn, translateText, elem) {
-        translateText.css("color", elem.css("color"));
-        translateBtn.on("click", function(){
-            translateBtnObserver.disconnect();
-            let encodeText = encodeURIComponent(elem.text());
-            let url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${sourceLang}&tl=${targetLang}&dt=t&q=${encodeText}`;
-            $.ajaxSetup({async: false});
-            $.getJSON(url, function(data) {
-                let text = "";
-                data[0].forEach(function(element){
-                    text += `<p>${escapeHtml(element[0])}</p>`;
-                });
-                translateText.html(text);
-                translateText.show();
-                $(this).off("click");
+
+    let translateObserver = new MutationObserver(function (MutationRecords, MutationObserver) {
+    translateObserver.disconnect();
+    const elms = $(postTextCSS).not(`.${marker}`);
+    for(let i = elms.length-1; i > -1; i--){
+        const elem = elms[i];
+        $(elem).addClass(marker);
+        const originalText = elem.innerText;
+        if(jaRe.test(originalText)) continue;
+
+        const encodeText = encodeURIComponent(originalText);
+        const url = base_url + encodeText;
+        $.ajaxSetup({async: false});
+        $.getJSON(url, function(data) {
+            let text = "";
+            data[0].forEach(function(element){
+                text += `<p>${escapeHtml(element[0])}</p>`;
             });
-            $.ajaxSetup({async: true});
-            translateBtnObserver.observe($(observeTarget).get(0), observeOption);
-            return false;
+            const parent = $(elem).parent();
+            const translatedDiv = document.createElement("div");
+            translatedDiv.classList.add("translatedText");
+            parent.after(translatedDiv);
+
+            translatedDiv.innerHTML = "<hr>"+text;
         });
+        $.ajaxSetup({async: true});
+        sleep(2000);//awaitを付けるとエラー これだとsleepできてないが問題なく使える？
     }
- 
+
+    translateObserver.observe($(observeTarget).get(0), observeOption);
+    });
+    translateObserver.observe($(observeTarget).get(0), observeOption);
+
     function escapeHtml(str) {
-        var patterns = {
-            '<'  : '&lt;',
-            '>'  : '&gt;',
-            '&'  : '&amp;',
-            '"'  : '&quot;',
-            '\'' : '&#x27;',
-            '`'  : '&#x60;'
-        };
-        return str.replace(/[<>&"'`]/g, function(match) {
-            return patterns[match];
-        });
+    var patterns = {
+        '<'  : '&lt;',
+        '>'  : '&gt;',
+        '&'  : '&amp;',
+        '"'  : '&quot;',
+        '\'' : '&#x27;',
+        '`'  : '&#x60;'
+    };
+    return str.replace(/[<>&"'`]/g, function(match) {
+        return patterns[match];
+    });
     };
 })();
